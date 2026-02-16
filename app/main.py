@@ -48,6 +48,27 @@ def main():
                             "required": ["file_path"]
                         }
                     }
+                },
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "Write",
+                        "description": "Write content to a file",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "file_path": {
+                                    "type": "string",
+                                    "description": "The path of the file to write to"
+                                },
+                                "content": {
+                                    "type": "string",
+                                    "description": "The content to write to the file"
+                                }
+                            },
+                            "required": ["file_path", "content"]
+                        }
+                    }
                 }
             ]
         )
@@ -95,6 +116,21 @@ def main():
                             "role": "tool",
                             "tool_call_id": tool_call.id,
                             "content": contents
+                        })
+                
+                # Execute the Write tool
+                elif function_name == "Write":
+                    file_path = arguments.get("file_path")
+                    content = arguments.get("content")
+                    if file_path:
+                        with open(file_path, 'w') as f:
+                            f.write(content)
+                        
+                        # Add the tool result to the message history
+                        messages.append({
+                            "role": "tool",
+                            "tool_call_id": tool_call.id,
+                            "content": "File written successfully"
                         })
         else:
             # No tool calls, we're done - print the final response
