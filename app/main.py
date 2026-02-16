@@ -1,4 +1,5 @@
 import argparse
+import json
 import os
 import sys
 
@@ -48,9 +49,27 @@ def main():
     # You can use print statements as follows for debugging, they'll be visible when running tests.
     print("Logs from your program will appear here!", file=sys.stderr)
 
-    # TODO: Uncomment the following line to pass the first stage
-    print(chat.choices[0].message.content)
-
+    message = chat.choices[0].message
+    
+    # Check if there are tool calls in the response
+    if hasattr(message, 'tool_calls') and message.tool_calls:
+        # Extract the first tool call
+        tool_call = message.tool_calls[0]
+        
+        # Get the function name and arguments
+        function_name = tool_call.function.name
+        arguments = json.loads(tool_call.function.arguments)
+        
+        # Execute the Read tool
+        if function_name == "Read":
+            file_path = arguments.get("file_path")
+            if file_path:
+                with open(file_path, 'r') as f:
+                    contents = f.read()
+                print(contents)
+    else:
+        # No tool calls, print the message content
+        print(message.content)
 
 if __name__ == "__main__":
     main()
