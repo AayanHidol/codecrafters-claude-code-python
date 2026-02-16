@@ -1,6 +1,7 @@
 import argparse
 import json
 import os
+import subprocess
 import sys
 
 from openai import OpenAI
@@ -69,6 +70,23 @@ def main():
                             "required": ["file_path", "content"]
                         }
                     }
+                },
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "Bash",
+                        "description": "Execute a shell command",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "command": {
+                                    "type": "string",
+                                    "description": "The command to execute"
+                                }
+                            },
+                            "required": ["command"]
+                        }
+                    }
                 }
             ]
         )
@@ -132,6 +150,36 @@ def main():
                             "tool_call_id": tool_call.id,
                             "content": "File written successfully"
                         })
+                
+                # Execute the Bash tool
+                elif function_name == "Bash":
+                    command = arguments.get("command")
+                    if command:
+                        try:
+                            result = subprocess.run(
+                                command,
+                                shell=True,
+                                capture_output=True,
+                                text=True
+                            )
+                            # Combine stdout and stderr
+                            output = result.stdout + result.stderr
+                            if not output:
+                                output = "Command executed successfully"
+                            
+                            # Add the tool result to the message history
+                            messages.append({
+                                "role": "tool",
+                                "tool_call_id": tool_call.id,
+                                "content": output
+                            })
+                        except Exception as e:
+                            # Add error message to the message history
+                            messages.append({
+                                "role": "tool",
+                                "tool_call_id": tool_call.id,
+                                "content": f"Error executing command: {str(e)}"
+                            })
         else:
             # No tool calls, we're done - print the final response
             print(message.content)
