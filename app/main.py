@@ -18,58 +18,88 @@ def main():
         raise RuntimeError("OPENROUTER_API_KEY is not set")
 
     client = OpenAI(api_key=API_KEY, base_url=BASE_URL)
-
-    chat = client.chat.completions.create(
-        model="anthropic/claude-haiku-4.5",
-        messages=[{"role": "user", "content": args.p}],
-        tools=[
-            {
-                "type": "function",
-                "function": {
-                    "name": "Read",
-                    "description": "Read and return the contents of a file",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "file_path": {
-                                "type": "string",
-                                "description": "The path to the file to read"
-                            }
-                        },
-                        "required": ["file_path"]
+    
+    # Initialize the conversation with the user's prompt
+    messages = [{"role": "user", "content": args.p}]
+    
+    # Use print statements for debugging, they'll be visible when running tests.
+    print("Logs from the program will appear here!", file=sys.stderr)
+    
+    # Agent loop
+    while True:
+        # Send messages to the model
+        chat = client.chat.completions.create(
+            model="anthropic/claude-haiku-4.5",
+            messages=messages,
+            tools=[
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "Read",
+                        "description": "Read and return the contents of a file",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "file_path": {
+                                    "type": "string",
+                                    "description": "The path to the file to read"
+                                }
+                            },
+                            "required": ["file_path"]
+                        }
                     }
                 }
-            }
-        ]
-    )
+            ]
+        )
 
-    if not chat.choices or len(chat.choices) == 0:
-        raise RuntimeError("no choices in response")
+        if not chat.choices or len(chat.choices) == 0:
+            raise RuntimeError("no choices in response")
 
-    # You can use print statements as follows for debugging, they'll be visible when running tests.
-    print("Logs from your program will appear here!", file=sys.stderr)
-
-    message = chat.choices[0].message
-    
-    # Check if there are tool calls in the response
-    if hasattr(message, 'tool_calls') and message.tool_calls:
-        # Extract the first tool call
-        tool_call = message.tool_calls[0]
+        # Get the response message
+        response = chat.choices[0]
+        message = response.message
         
-        # Get the function name and arguments
-        function_name = tool_call.function.name
-        arguments = json.loads(tool_call.function.arguments)
+        # Add the assistant's response to the message history
+        messages.append({
+            "role": "assistant",
+            "content": message.content,
+            "tool_calls": [
+                {
+                    "id": tc.id,
+                    "type": "function",
+                    "function": {
+                        "name": tc.function.name,
+                        "arguments": tc.function.arguments
+                    }
+                }
+                for tc in (message.tool_calls if hasattr(message, 'tool_calls') and message.tool_calls else [])
+            ] if hasattr(message, 'tool_calls') and message.tool_calls else None
+        })
         
-        # Execute the Read tool
-        if function_name == "Read":
-            file_path = arguments.get("file_path")
-            if file_path:
-                with open(file_path, 'r') as f:
-                    contents = f.read()
-                print(contents)
-    else:
-        # No tool calls, print the message content
-        print(message.content)
+        # Check if there are tool calls
+        if hasattr(message, 'tool_calls') and message.tool_calls:
+            # Execute each tool call
+            for tool_call in message.tool_calls:
+                function_name = tool_call.function.name
+                arguments = json.loads(tool_call.function.arguments)
+                
+                # Execute the Read tool
+                if function_name == "Read":
+                    file_path = arguments.get("file_path")
+                    if file_path:
+                        with open(file_path, 'r') as f:
+                            contents = f.read()
+                        
+                        # Add the tool result to the message history
+                        messages.append({
+                            "role": "tool",
+                            "tool_call_id": tool_call.id,
+                            "content": contents
+                        })
+        else:
+            # No tool calls, we're done - print the final response
+            print(message.content)
+            break
 
 if __name__ == "__main__":
     main()

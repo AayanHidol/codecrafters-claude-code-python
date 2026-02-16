@@ -1,0 +1,102 @@
+import argparse 
+import json 
+import os 
+import sys 
+
+from openai import OpenAI 
+
+API_KEY = os.getenv("OPENROUTER_API_KEY") 
+BASE_URL = os.getenv("OPENROUTER_BASE_URL", default="https://openrouter.ai/api/v1") 
+
+def main():
+    p = argparse.ArgumentParser() 
+    p.add_argument("-p", required=True) 
+    args = p.parse_args() 
+
+    if not API_KEY:
+        raise RuntimeError("OPENROUTER_API_KEY is not set") 
+    
+    client = OpenAI(api_key=API_KEY, base_url=BASE_URL) 
+
+    # Initialize the conversation with the user's prompt 
+    messages = [{"role": "user", "content": args.p}] 
+
+    # You can use print statements as follows for debugging, they'll be visible when running tests.
+    print("Logs from your program will appear here!", file=sys.stderr) 
+
+    # Agent loop
+    while True:
+        # Send messages to the model 
+        chat = client.chat.completions.create(
+            model="anthropic/claude-haiku-4.5",
+            messages=messages,
+            tools=[
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "Read",
+                        "description": "Read and return the contents of a file",
+                        "parameters": {
+                            "file_path": {
+                                "type": "string",
+                                "description": "The path to the file to read"
+                            }
+                        },
+                        "required": ["file_path"] 
+                    }
+                }
+            ]
+        )
+
+        if not chat.choices or len(chat.choices) == 0:
+            raise RuntimeError("no choices in response") 
+        
+        # Get the response message
+        response = chat.choices[0] 
+        message = response.message 
+
+        # Add the assistant's response to the message history
+        messages.append({
+            "role": "assistant",
+            "content": message.content,
+            "tool_calls": [
+                {
+                    "id": tc.id,
+                    "type": "function",
+                    "function": {
+                        "name": tc.function.name,
+                        "arguments": tc.function.arguments 
+                    }
+                }
+                for tc in (message.tool_calls if hasattr(message, 'tool_calls') and message.tool_calls else [])
+            ] if hasattr(message, 'tool_calls') and message.tool_calls else None 
+        })
+
+        # Check if there are any tool calls
+        if hasattr(message, 'tool_calls') and message.tool_calls:
+            # Execute each tool call
+            for tool_call in message.tool_calls:
+                function_name = tool_call.function.name 
+                arguments = json.loads(tool_call.function.arguments) 
+
+                # Execute the Read tool
+                if function_name == "Read":
+                    file_path = arguments.get("file_path") 
+                    if file_path:
+                        with open(file_path, 'r') as f:
+                            contents = f.read() 
+
+                        # Add the tool result to the message history 
+                        messages.append({
+                            "role": "tool",
+                            "tool_call_id": tool_call.id,
+                            "content": contents 
+                        })
+        
+        else:
+            # No tool calls, we're done - print the final response 
+            print(message.content)
+            break 
+    
+if __name__ == "__main__":
+    main() 
